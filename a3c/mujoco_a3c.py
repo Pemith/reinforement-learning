@@ -1,63 +1,11 @@
-"""
-A3C (Asynchronous Advantage Actor-Critic) for InvertedPendulum-v4
-====================================================================
 
-Extends the base REINFORCE tutorial
-(https://gymnasium.farama.org/tutorials/training_agents/mujoco_reinforce/)
-by replacing the single-threaded Monte-Carlo policy gradient with the
-A3C algorithm (Mnih et al., 2016, "Asynchronous Methods for Deep
-Reinforcement Learning").
-
-Design summary
---------------
-* A single `ActorCritic` network (shared trunk + Gaussian policy head +
-  scalar value head) lives in shared memory (`.share_memory()`), so
-  every worker process reads/writes the *same* underlying parameters
-  ("global network").
-* `N_WORKERS` worker processes are spawned per seed. Each worker:
-    1. builds a *local* copy of the network,
-    2. before every episode, copies the current global weights into
-       its local network,
-    3. rolls out one full episode with its local network,
-    4. computes the advantage-actor-critic loss
-           advantage_t = G_t - V(s_t)
-           policy_loss = -sum_t log pi(a_t|s_t) * advantage_t.detach()
-                          - entropy_coef * entropy_t
-           value_loss  = sum_t advantage_t^2
-           loss        = policy_loss + value_coef * value_loss
-       using full Monte-Carlo returns G_t (since InvertedPendulum
-       episodes are short, this is the natural analogue of n-step
-       returns with n = episode length -- the same simplification
-       used for the "REINFORCE with baseline" variant, but computed
-       asynchronously in this case),
-    5. backpropagates *locally*, then copies the resulting gradients
-       into the shared global network and takes one step with a
-       shared Adam optimizer (`SharedAdam`), following the standard
-       "Hogwild!" lock-free asynchronous update used in the original
-       A3C paper.
-* Episodic rewards from all workers are written to a shared list
-  together with a globally-shared episode counter. Training for a
-  given seed stops once `total_num_episodes` episodes have been
-  completed *in total, across all workers*. The recorded
-  (episode_index, reward) pairs are then sorted by episode index to
-  produce a reward-vs-episode curve directly comparable to the other
-  two (single-threaded) algorithms.
-
-Note on reproducibility: because A3C is inherently asynchronous, the
-exact interleaving of worker updates is not perfectly deterministic
-even for a fixed seed (this is true of A3C in general -- it trades
-strict reproducibility for training speed/decorrelation). We still
-seed everything we can control (global RNGs, per-worker env seeds
-derived deterministically from the parent seed) so that runs are
-*close to* reproducible and comparable across the same 5 Fibonacci
-seeds used for the other two algorithms.
-"""
 
 from __future__ import annotations
 
 import argparse
 import os
 
+import pandas as pd
 import numpy as np
 import torch
 import torch.multiprocessing as mp
@@ -66,6 +14,8 @@ import torch.nn.functional as F
 from torch.distributions.normal import Normal
 
 import gymnasium as gym
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 N_WORKERS = 4          # number of asynchronous actor-learners per seed
 VALUE_COEF = 0.5
@@ -154,7 +104,7 @@ def worker(
     torch.manual_seed(worker_seed)
     np.random.seed(worker_seed)
 
-    env = gym.make("InvertedPendulum-v4")
+    env = gym.make("InvertedPendulum-v5")
     wrapped_env = gym.wrappers.RecordEpisodeStatistics(env, 50)
 
     local_net = ActorCritic(obs_space_dims, action_space_dims)
@@ -270,9 +220,12 @@ def run_single_seed(seed: int, total_num_episodes: int, obs_space_dims: int, act
 
 
 def run(total_num_episodes: int = 5000, seeds=(1, 2, 3, 5, 8), out_dir: str = "../results"):
+    out_dir = "../results"
+    plot_dir = f"{out_dir}/plots"
     os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(plot_dir, exist_ok=True)
 
-    env = gym.make("InvertedPendulum-v4")
+    env = gym.make("InvertedPendulum-v5")
     obs_space_dims = env.observation_space.shape[0]
     action_space_dims = env.action_space.shape[0]
     env.close()
@@ -289,14 +242,29 @@ def run(total_num_episodes: int = 5000, seeds=(1, 2, 3, 5, 8), out_dir: str = ".
         np.save(os.path.join(out_dir, f"a3c_seed{seed}.npy"),
                 np.array(reward_over_episodes, dtype=np.float32))
 
-    np.save(os.path.join(out_dir, "a3c_all_seeds.npy"),
-            np.array(rewards_over_seeds, dtype=np.float32))
+    np.save(os.path.join(out_dir, "a3c_all_seeds.npy"), np.array(rewards_over_seeds, dtype=np.float32))
+
+    df = pd.DataFrame(rewards_over_seeds).melt()
+    df.rename(columns={"variable": "episodes", "value": "reward"}, inplace=True)
+
+    sns.set(style="darkgrid", context="talk", palette="rainbow")
+    plt.figure(figsize=(10, 6))
+    
+    # Lineplot automatically calculates standard error bands around the seed mean
+    ax = sns.lineplot(x="episodes", y="reward", data=df)
+    ax.set(title="A3C (Asynchronous Advantage Actor-Critic) for InvertedPendulum-v5")
+    
+    # Save image version to results directory
+    plt.savefig(os.path.join(plot_dir, "a3c_learning_curve.png"))
+    print(f"Success! Saved training image to: {plot_dir}")
+    
+    plt.show()
 
     return rewards_over_seeds
 
 
 def main():
-    parser = argparse.ArgumentParser(description="A3C on InvertedPendulum-v4")
+    parser = argparse.ArgumentParser(description="A3C on InvertedPendulum-v5")
     parser.add_argument("--episodes", type=int, default=5000)
     parser.add_argument("--seeds", type=int, nargs="+", default=[1, 2, 3, 5, 8])
     parser.add_argument("--out_dir", type=str, default="../results")

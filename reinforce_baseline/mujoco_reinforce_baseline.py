@@ -1,35 +1,3 @@
-"""
-REINFORCE with Baseline Subtraction for InvertedPendulum-v4
-=============================================================
-
-Extends the vanilla REINFORCE tutorial
-(https://gymnasium.farama.org/tutorials/training_agents/mujoco_reinforce/)
-with a learned baseline b(s_t) = V(s_t), the expected return from state
-s_t under the current policy, estimated by a separate value network.
-
-Key changes relative to the base tutorial:
-  1. A `Value_Network` is added: a small MLP that maps a state to a
-     scalar estimate of V(s), trained by regression (MSE) toward the
-     Monte-Carlo return G_t observed in that episode.
-  2. The agent now also stores the sequence of visited states
-     (`self.states`) for each episode, needed to query the value
-     network during `update()`.
-  3. `update()` computes:
-         advantage_t = G_t - V(s_t)          (baseline-subtracted return)
-     and the policy loss becomes
-         L_policy = -sum_t log pi(a_t|s_t) * advantage_t.detach()
-     while the value network is trained separately with
-         L_value = mean_t (V(s_t) - G_t)^2
-  4. Two independent Adam/AdamW optimizers are used (policy, value),
-     each stepped once per episode -- exactly analogous to the single
-     policy update in vanilla REINFORCE.
-
-Everything else (policy network architecture, discounting, training
-loop, seeds, episode budget) is kept identical to the base tutorial so
-that the comparison between the two algorithms isolates the effect of
-the baseline.
-"""
-
 from __future__ import annotations
 
 import argparse
