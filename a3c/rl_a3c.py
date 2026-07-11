@@ -17,7 +17,7 @@ import gymnasium as gym
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-N_WORKERS = 4          # number of asynchronous actor-learners per seed
+N_WORKERS = 4       
 VALUE_COEF = 0.5
 ENTROPY_COEF = 1e-3
 GAMMA = 0.99
@@ -93,7 +93,7 @@ def worker(
     episode_counter: mp.Value,
     episode_lock: mp.Lock,
     total_num_episodes: int,
-    reward_log: list,  # a Manager().list() shared across processes
+    reward_log: list, 
     obs_space_dims: int,
     action_space_dims: int,
 ):
@@ -212,8 +212,6 @@ def run_single_seed(seed: int, total_num_episodes: int, obs_space_dims: int, act
     for p in processes:
         p.join()
 
-    # Sort recorded (episode_index, reward) pairs by episode index so the
-    # resulting curve is directly comparable to the sequential algorithms.
     results = sorted(list(reward_log), key=lambda pair: pair[0])
     reward_over_episodes = [r for _, r in results]
     return reward_over_episodes
@@ -275,9 +273,9 @@ def main():
     if args.workers is not None:
         N_WORKERS = args.workers
 
-    run(total_num_episodes=args.episodes, seeds=tuple(args.seeds), out_dir=args.out_dir)
+    run(total_num_episodes=5000, seeds=(1, 2, 3, 5, 8))
 
 
 if __name__ == "__main__":
-    mp.set_start_method("spawn", force=True)  # required for CUDA-safety / cross-platform compatibility
+    mp.set_start_method("spawn", force=True)  
     main()
